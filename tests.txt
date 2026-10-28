@@ -1,0 +1,121 @@
+note : i have problem that the http dont work on my laptop 
+so i decide to make chatgpt to help me to test it in terminal 
+and also i take this solution to make every thing in one app 
+also this very close to what i do in rabbit mq 
+
+
+//without concerncy 
+## I wanna to sure about the seats 
+
+(env) PS C:\Users\demiana\Desktop\python projects\availableSeat> Invoke-RestMethod -Uri "http://127.0.0.1:8000/status" -Method Get                                                     
+                                    
+remaining_seats reservations
+--------------- ------------
+              5             
+
+make user to get 3 seats 
+
+(env) PS C:\Users\demiana\Desktop\python projects\availableSeat> $body = @{                                               
+>>     user_id = "A101"                                      
+>>     quantity = 3                 
+>> } | ConvertTo-Json
+>> 
+>> Invoke-RestMethod -Uri "http://127.0.0.1:8000/reservations" -Method Post -ContentType "application/json" -Body $body
+
+message                                                 rema
+                                                        inin
+                                                        g_se
+                                                         ats
+-------                                                 ----
+Reservation successful. 3 seats reserved for user A101.    2
+
+
+(env) PS C:\Users\demiana\Desktop\python projects\availableSeat> Invoke-RestMethod -Uri "http://127.0.0.1:8000/reservations/A101?quantity=2" -Method Delete                            
+                                    
+message                                      remaining_seats
+-------                                      ---------------
+Reservation for user A101 has been canceled.               4 
+                                                          
+#to be sure that remaining_seats & reservations update after the delete 
+
+(env) PS C:\Users\demiana\Desktop\python projects\availableSeat> Invoke-RestMethod -Uri "http://127.0.0.1:8000/status" -Method Get                         
+                   
+remaining_seats reservations
+--------------- ------------
+              4 @{A101=1}                                    
+                                                          
+
+after that i need to check if user a101 that already have seat need to make reservation one more again that i expected error because this rule :
+
+
+(env) PS C:\Users\demiana\Desktop\python projects\availableSeat> $body = @{                                               
+>>     user_id = "A101"          
+>>     quantity = 3
+>> } | ConvertTo-Json
+>> 
+>> Invoke-RestMethod -Uri "http://127.0.0.1:8000/reservations" -Method Post -ContentType "application/json" -Body $body
+Invoke-RestMethod : {"detail":"You have already reserved 
+seats."}
+At line:6 char:1
++ Invoke-RestMethod -Uri 
+"http://127.0.0.1:8000/reservations" -Method P ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (System.Net 
+   .HttpWebRequest:HttpWebRequest) [Invoke-RestMethod], We  
+  bException
+    + FullyQualifiedErrorId : WebCmdletWebResponseException 
+   ,Microsoft.PowerShell.Commands.InvokeRestMethodCommand
+
+check if another user request i done normaly :
+(env) PS C:\Users\demiana\Desktop\python projects\availableSeat> $body = @{                                               
+>>     user_id = "A102"          
+>>     quantity = 3
+>> } | ConvertTo-Json
+>> 
+>> Invoke-RestMethod -Uri "http://127.0.0.1:8000/reservations" -Method Post -ContentType "application/json" -Body $body
+
+message                                                 rema
+                                                        inin
+                                                        g_se
+                                                         ats
+-------                                                 ----
+Reservation successful. 3 seats reserved for user A102.    1
+
+checking that if there is no seats give an error 
+
+(env) PS C:\Users\demiana\Desktop\python projects\availableSeat> $body = @{
+>>     user_id = "A104"
+>>     quantity = 3
+>> } | ConvertTo-Json
+>> 
+>> Invoke-RestMethod -Uri "http://127.0.0.1:8000/reservations" -Method Post -ContentType "application/json" -Body $body
+Invoke-RestMethod : {"detail":"Not enough seats available. 
+Reservation rejected."}
+At line:6 char:1
++ Invoke-RestMethod -Uri 
+"http://127.0.0.1:8000/reservations" -Method P ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (System.Net 
+   .HttpWebRequest:HttpWebRequest) [Invoke-RestMethod], We  
+  bException
+    + FullyQualifiedErrorId : WebCmdletWebResponseException 
+   ,Microsoft.PowerShell.Commands.InvokeRestMethodCommand
+
+=========================================================================================================================================
+concerncy and see the result of race CONDITION
+##python concurrency_test.py 
+#Setup: {'user': 'SetupUser', 'status': 200, 'result': {'message': 'Reservation successful. 4 seats reserved for user SetupUser.', 'remaining_seats': 1}}
+#Customer A: {'user': 'CustomerA', 'status': 200, 'result': {'message': 'Reservation successful. 1 seats reserved for user CustomerA.', 'remaining_seats': -1}}
+#Customer B: {'user': 'CustomerB', 'status': 200, 'result': {'message': 'Reservation successful. 1 seats reserved for user CustomerB.', 'remaining_seats': 0}}
+#Final status: {'remaining_seats': -1, 'reservations': {'SetupUser': 4, 'CustomerB': 1, 'CustomerA': 1}}
+#/
+=========================================================================================================================================
+AFTER add lock :
+(env) PS C:\Users\demiana\Desktop\python projects\availableSeat> python concurrency_test.py
+Setup: {'user': 'SetupUser', 'status': 200, 'result': {'message': 'Reservation successful. 4 seats reserved for user SetupUser.', 'remaining_seats': 1}}
+Customer A: {'user': 'CustomerA', 'status': 400, 'result': {'detail': 'Not enough seats available. Reservation rejected.'}}
+Customer B: {'user': 'CustomerB', 'status': 200, 'result': {'message': 'Reservation successful. 1 seats reserved for userCustomerB.', 'remaining_seats': 0}}
+Final status: {'remaining_seats': 0, 'reservations': {'SetupUser': 4, 'CustomerB': 1}}
+
